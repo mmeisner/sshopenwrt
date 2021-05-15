@@ -1,0 +1,376 @@
+#!/usr/bin/env python3
+# Perform automated actions on an OpenWRT router via SSH connection
+
+__author__ = "Mads Meisner-Jensen"
+__copyright__ = "Copyright 2021"
+import os
+import sys
+import argparse
+import traceback
+import time
+
+from sshopenwrt import *
+
+host_aliases = {
+    '1': "192.168.1.1"
+}
+
+
+#### helpers ##################################################################
+
+def localhost_run_command(cmd, with_stdout=False):
+    """
+    Execute `cmd` on LOCALHOST and capture stdout and stderr,
+    optionally printing output on the fly.
+
+    :param cmd:         Command to run
+    :param with_stdout: True to print output on the fly
+    :return:            status, stdout, stderr
+    """
+    log.cmd(cmd, prefix=f"localhost $ ")
+    if opt.dryrun:
+        return 0, "", ""
+
+    files = [sys.stdout] if with_stdout else []
+    return run_command(cmd, files=files)
+
+def localhost_run_command_ok(cmd, with_stdout=False, accept_stderr=None):
+    """
+    Execute `cmd` on LOCALHOST and capture stdout and stderr,
+    optionally printing output on the fly.
+    Command must succeed (exitcode 0) or its stderr output must contain
+    the string given by `accept_stderr`. Otherwise class:`CommandFailed`
+    is raised.
+
+    :param cmd:           Command to run
+    :param with_stdout:   True to print output on the fly
+    :param accept_stderr: Acceptable stderr in case exitcode is non-zero
+    :return:              status, stdout, stderr
+    """
+    status, stdout, stderr = localhost_run_command(cmd, with_stdout=with_stdout)
+    if status != 0:
+        if accept_stderr and accept_stderr in stderr:
+            print(stderr)
+            return stdout
+        raise CommandFailed(status, stderr=stderr)
+    return stdout
+
+
+#### backup ###################################################################
+
+def cmd_backup_filename(host, withtime=True):
+    if '@' in host:
+        host = host.split("@")[-1]
+    if withtime:
+        now = time.time()
+        ts = time.strftime("-%Y-%b-%d-%H-%M-%S", time.gmtime(now))
+    else:
+        ts = ""
+    return f"config-backup-{host}{ts}.tar.gz"
+
+def cmd_backup(owrt:OpenWRT):
+    if opt.list:
+        out = owrt.execute("/sbin/sysupgrade -l")
+        return
+
+    if opt.filename:
+        filename = opt.filename
+    else:
+        filename = cmd_backup_filename(opt.host, withtime=opt.withtime)
+    cmd = f"/sbin/sysupgrade -b /tmp/{filename}"
+    owrt.execute(cmd)
+    owrt.copy_from(f"/tmp/{filename}", ".")
+
+def cmd_add_backup(subparsers, name, func):
+    help = "Perform config backup and save the file locally"
+    parser = subparsers.add_parser(name,
+        formatter_class=argparse.RawTextHelpFormatter, help=help, description=help)
+    parser.add_argument('-l', dest='list', action="store_true",
+        help=f"List backup files (/sbin/sysupgrade -l)")
+    parser.add_argument('-f', metavar='FILE', dest='filename', type=str,
+        help=f"Output file. Default is {cmd_backup_filename('HOST', withtime=False)}")
+    parser.add_argument('-T', dest='withtime', action="store_false", default=True,
+        help=f"Do not append timestamp to output filename")
+    parser.set_defaults(func=func)
+
+#### iface config #############################################################
+
+def cmd_iface_config(owrt:OpenWRT):
+    owrt.configure_iface_ipv4(opt.iface, opt.proto, opt.ipaddr, opt.netmask, commit=opt.doit)
+    if opt.doit:
+        owrt.service_restart("network")
+
+def cmd_add_iface_config(subparsers, name, func):
+    help = """Configure network interface"""
+    parser = subparsers.add_parser(name,
+        formatter_class=argparse.RawTextHelpFormatter, help=help, description=help)
+
+    parser.add_argument(dest='iface', metavar='wan|lan', type=str, nargs='?',
+        help=f"Interface: wan or lan")
+    parser.add_argument(dest='proto', metavar='dhcp|static', type=str, nargs='?',
+        help=f"Protocol: static or dhcp")
+    parser.add_argument("-i", dest='ipaddr', metavar='IP', type=str,
+        help=f"Interface IPv4 address")
+    parser.add_argument("-m", dest='netmask', metavar='MASK', type=str, default="255.255.255.0",
+        help=f"Interface IPv4 netmask. Default is 255.255.255.0")
+    parser.add_argument('-c', dest='doit', action="store_true",
+        help=f"uci commit and network restart")
+    parser.set_defaults(func=func)
+
+#### upgrade ##################################################################
+
+def cmd_upgrade_wait(owrt:OpenWRT):
+    log.info(f"Waiting for device to go offline (reboot)")
+    owrt.ping_wait_offline(timeout=60, min_offline_time=3)
+
+    log.info("Waiting for router to finish upgrade and come back online...")
+    owrt.ping_wait(timeout=120)
+    for i in range(30):
+        try:
+            ver = owrt.get_release()
+            log.info(ver)
+            return
+        except CommandFailed:
+            time.sleep(2)
+
+
+def cmd_upgrade(owrt:OpenWRT):
+    if opt.wait_online:
+        return cmd_upgrade_wait(owrt)
+
+    owrt.copy_to(f"{opt.filename}", "/tmp")
+    opt_n = "-n" if opt.factory_reset else ""
+    basename = os.path.basename(opt.filename)
+
+    log.info("Verifying image...")
+    cmd = f"/sbin/sysupgrade --test -v /tmp/{basename}"
+    owrt.capture_ok(cmd, with_stdout=True)
+
+    started = time.time()
+    log.info("Upgrading...")
+    cmd = f"/sbin/sysupgrade {opt_n} -v /tmp/{basename}"
+    # This command will always fail because the connection is closed
+    owrt.capture(cmd, with_stdout=True)
+
+    cmd_upgrade_wait(owrt)
+    elapsed = time.time() - started
+    log.info(f"Upgrade completed in {elapsed:.0f}s")
+
+def cmd_add_upgrade(subparsers, name, func):
+    help = "Perform firmware upgrade"
+    parser = subparsers.add_parser(name,
+        formatter_class=argparse.RawTextHelpFormatter, help=help, description=help)
+    parser.add_argument(dest='filename', metavar='FILE', type=str,
+        help=f"Firmware image file")
+    parser.add_argument('--factory', dest='factory_reset', default=False, action="store_true",
+        help="Upgrade with factory reset, i.e. using 'sysupgrade -n'")
+    parser.add_argument('-w', dest='wait_online', default=False, action="store_true",
+        help="Wait for host to come back online (using ping)")
+    parser.set_defaults(func=func)
+
+#### thruput ##################################################################
+
+test_host_default = "192.168.55.55/24"
+
+def cmd_thruput(owrt:OpenWRT):
+    test_host = opt.test_host_ip
+    if not "/" in test_host:
+        opt.test_host_ip += "/24"
+
+    down = "d" in opt.dir or "w" in opt.dir
+    up = "u" in opt.dir or "l" in opt.dir
+
+    thrutest = ThruputTest(owrt, localhost_run_command_ok,
+                      test_server_ip=opt.test_host_ip, test_server_ifname=opt.test_host_ifname,
+                      #test_server_ssh_ip=opt.test_host_ssh,
+                      router_wan_ifname="eth1")
+    thrutest.setup_all()
+    thrutest.run_iperf3(num=opt.num, duration=opt.duration, down=down, up=up, with_json=opt.json)
+
+
+def cmd_add_thruput(subparsers, name, func):
+    help = "Perform wired WAN/LAN thruput test using iperf3"
+    parser = subparsers.add_parser(name,
+        formatter_class=argparse.RawTextHelpFormatter, help=help, description=ThruputTest.__doc__)
+    parser.add_argument("-s", dest='test_host_ip', metavar='HOST', type=str, default=test_host_default,
+        help=f"""IP of iperf3 server host connected to router's WAN port
+Use this option if server only has one network interface and you
+therefore cannot SSH to it. I will provide instructions on how
+to configure it. Default is {test_host_default}""")
+#     parser.add_argument("-ssh", dest='test_host_ssh', metavar='HOST', type=str, default="",
+#         help=f"""SSH IP of iperf3 server host.
+# Use this option if you can ssh to the server via another network
+# interface (e.g. WIFI) and I will do my best to setup the server
+# automatically""")
+    parser.add_argument("-i", dest='test_host_ifname', metavar='IFNAME', type=str, default="IFNAME",
+        help=f"Name of iperf3 server's ethernet interface connected to router's WAN port")
+    parser.add_argument('-j', dest='json', default=False, action="store_true",
+        help="Summarizing/brief output (using iperf3 JSON output)")
+    parser.add_argument('-n', dest='num', metavar="NUM", default=1, type=int,
+        help="Number of iperf3 iterations")
+    parser.add_argument('-t', dest='duration', metavar="SECS", default=10, type=int,
+        help="Duration of iperf3 each test")
+    parser.add_argument('-d', dest='dir', metavar="d|u|du", default="du",
+        help="Direction: d = wan->lan (downlink), u = lan->wan (uplink)")
+    parser.set_defaults(func=func)
+
+
+#### info #####################################################################
+
+def cmd_info(owrt:OpenWRT):
+    if opt.uci_pending is False:
+        owrt.execute("uptime")
+        owrt.execute("uname -a")
+        owrt.execute('cat /etc/os-release | grep -E "_BOARD|_ARCH|_RELEASE"')
+        owrt.execute("df -h")
+        owrt.execute("ip -4 -color addr")
+
+        keys = ("ifname", "proto", "ipaddr", "netmask")
+        out = owrt.uci_show("network.lan")
+        log.info("\n".join(grep(out, "|".join(keys))))
+        out = owrt.uci_show("network.wan")
+        log.info("\n".join(grep(out, "|".join(keys))))
+
+    out = owrt.capture_ok("uci changes").rstrip()
+    if out:
+        log.info(out)
+    else:
+        log.info("No pending uci (configuration) changes")
+
+def cmd_add_info(subparsers, name, func):
+    help = """Get overview info from host"""
+    parser = subparsers.add_parser(name,
+        formatter_class=argparse.RawTextHelpFormatter, help=help, description=help)
+    parser.add_argument('-u', dest='uci_pending', default=False, action="store_true",
+                        help="Only show pending config changes (output of 'uci changes')")
+
+    parser.set_defaults(func=func)
+
+#### adhoc ####################################################################
+
+def cmd_adhoc(owrt:OpenWRT):
+    key = "network.wan.ipaddr"
+    value = owrt.uci_get(key)
+
+    config_dict = { key : value }
+    owrt.uci_set(config_dict)
+
+    config_tuples = [ (key, value) ]
+    owrt.uci_set(config_tuples)
+
+    config_list = [ key, value ]
+    owrt.uci_set(config_list)
+
+    owrt.execute("uptime")
+    owrt.ping_wait_offline(host="192.168.1.3", timeout=10, min_offline_time=7)
+
+
+def cmd_add_adhoc(subparsers, name, func):
+    help = """Adhoc test (for trying out new stuff)"""
+    parser = subparsers.add_parser(name,
+        formatter_class=argparse.RawTextHelpFormatter, help=help, description=help)
+    parser.set_defaults(func=func)
+
+
+###############################################################################
+# command-line
+###############################################################################
+
+prog = os.path.basename(__file__)
+
+examples = f"""\
+# Get some basic info from router
+  {prog} -c 192.168.1.1 info
+# Run WAN/LAN throughput test using test server
+  {prog} -c 192.168.1.1 thruput -j -n10
+"""
+
+def parser_create():
+    description = f"""\
+SSH OpenWRT Control Automatron: SSH to OpenWRT router and execute
+various operations.
+
+Script uses SSH control master connection for maximum SSH connection speed.
+You should have a proper .ssh/config for the router device.  
+"""
+    epilog = f"""
+"""
+
+    parser = argparse.ArgumentParser(
+        formatter_class=argparse.RawTextHelpFormatter,
+        description=description, epilog=epilog, add_help=False)
+
+    group = parser.add_argument_group('Global Options')
+    group.add_argument("-c", dest='host', metavar='HOST', type=str,
+        help=f"Host to connect to. REQUIRED argument.")
+    # group.add_argument('-i', dest='identity', type=str, default=None,
+    #     help='SSH identity file')
+    group.add_argument('-v', dest='verbose', action='count', default=1,
+        help='Be more verbose')
+    group.add_argument('-q', dest='quiet', action='count', default=0,
+        help='Be more quiet',)
+
+    group.add_argument('-n', dest='dryrun', default=False, action="store_true", help="Dry run")
+    group.add_argument('-d', dest='debugtrace', default=False, action="store_true",
+        help="Show full backtrace on exception")
+    group.add_argument('-h', dest='help', action='count', default=0,
+        help="Show usage" + (". Give option twice to see usage examples" if len(examples) else ""))
+
+    commands = parser.add_subparsers(dest="command", metavar="COMMAND", help="Command to execute:")
+    cmd_add_info(commands, 'info', cmd_info)
+    cmd_add_backup(commands, 'backup', cmd_backup)
+    cmd_add_upgrade(commands, 'upgrade', cmd_upgrade)
+    cmd_add_iface_config(commands, 'iface', cmd_iface_config)
+    cmd_add_thruput(commands, 'thruput', cmd_thruput)
+    #cmd_add_adhoc(commands, 'adhoc', cmd_adhoc)
+    return parser
+
+
+def print_traceback_tip():
+    if opt.debugtrace:
+        traceback.print_exc()
+    else:
+        print(f"Tip: add -d command-line option to see traceback")
+
+opt = None
+log = None
+
+if __name__ == "__main__":
+    parser = parser_create()
+    opt = parser.parse_args()
+
+    opt.verbose -= opt.quiet
+    show_cmds = opt.verbose >= 0
+    if opt.verbose < 0:
+        opt.verbose = 0
+
+    # with_progress will print the commands being executed
+    log = Log(opt.verbose, show_cmds=show_cmds)
+    color_enable()
+
+    if opt.help:
+        if opt.help == 1:
+            parser.print_help()
+        else:
+            print(examples)
+        sys.exit(0)
+
+    if not opt.host:
+        print("Missing argument: -c HOST")
+        sys.exit(1)
+
+    if opt.host in host_aliases:
+        log.verb(f"Using host alias {opt.host} = {host_aliases[opt.host]}")
+        opt.host = host_aliases[opt.host]
+
+    ssh_id = opt.identity if hasattr(opt, 'identity') else None
+    owrt = OpenWRT(opt.host, ssh_id, dryrun=opt.dryrun)
+    owrt.log = log
+
+    try:
+        if hasattr(opt, 'func') and opt.func:
+            opt.func(owrt)
+    except CommandFailed as e:
+        log.error(e)
+        print_traceback_tip()
+        sys.exit(1)
