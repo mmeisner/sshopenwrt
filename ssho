@@ -58,6 +58,8 @@ def localhost_run_command_ok(cmd, with_stdout=False, accept_stderr=None):
 
 #### backup ###################################################################
 
+backup_basename = "config-backup"
+
 def cmd_backup_filename(host, withtime=True):
     if '@' in host:
         host = host.split("@")[-1]
@@ -66,32 +68,85 @@ def cmd_backup_filename(host, withtime=True):
         ts = time.strftime("-%Y-%b-%d-%H-%M-%S", time.gmtime(now))
     else:
         ts = ""
-    return f"config-backup-{host}{ts}.tar.gz"
+    return f"{backup_basename}-{host}{ts}.tar.gz"
 
 def cmd_backup(owrt:OpenWRT):
     if opt.list:
         out = owrt.execute("/sbin/sysupgrade -l")
         return
 
+    host = opt.host
+    if '@' in opt.host:
+        host = opt.host.split("@")[-1]
+
     if opt.filename:
         filename = opt.filename
     else:
         filename = cmd_backup_filename(opt.host, withtime=opt.withtime)
+
+    if not filename.endswith(".tar.gz"):
+        filename += ".tar.gz"
+
     cmd = f"/sbin/sysupgrade -b /tmp/{filename}"
     owrt.execute(cmd)
     owrt.copy_from(f"/tmp/{filename}", ".")
+    log.info(f"wrote configuration backup archive to {filename}")
+
+    origdir = os.getcwd()
+
+    # unpack backup archive
+    backup_dir = f"{backup_basename}-{host}"
+    os.makedirs(backup_dir, exist_ok=True)
+    os.chdir(backup_dir)
+    localhost_run_command(f"tar xf ../{filename}", with_stdout=True)
+    log.info(f"wrote configuration backup to {backup_dir}")
+    os.chdir(origdir)
+
+    # save /overlay/upper
+    overlay_tarball = "overlay.tar.gz"
+    overlay_dir = f"overlay-{host}"
+    os.makedirs(overlay_dir, exist_ok=True)
+
+    cmd = f"ssh {host} 'cd /overlay/upper && tar czf /tmp/{overlay_tarball} .'"
+    localhost_run_command(cmd, with_stdout=True)
+    cmd = f"scp {host}:/tmp/{overlay_tarball} ."
+    localhost_run_command(cmd, with_stdout=True)
+    log.info(f"wrote {overlay_tarball}")
+    # tarball files are root owned so we need to unpack with --no-same-owner
+    # All the files in /etc/uci-defaults have been deleted in the overlay so they
+    # will result in errors like:
+    #     tar: ./etc/uci-defaults/00_uhttpd_ubus: Cannot mknod: Operation not permitted
+    # therefore we exclude those files
+    localhost_run_command(f"tar --exclude='uci-defaults/*' --no-same-owner -C {overlay_dir} -xf {overlay_tarball}", with_stdout=True)
+    log.info(f"transferred backup of /overlay/upper to {overlay_dir}")
+
+    # alternative and simple way to copy the /overlay/upper but alas without
+    # the possibility to exclude /etc/uci-defaults
+    # cmd = f"scp -r {host}:/overlay/upper/* {overlay_dir}"
+    # localhost_run_command(cmd, with_stdout=True)
 
 def cmd_add_backup(subparsers, name, func):
-    help = "Perform config backup and save the file locally"
+    help = "Backup configuration and overlayfs contents e.g. /overlay/upper"
+    desc = f"""\
+{help}:
+
+  - Configuration is saved to directory config-backup-HOST
+  - Configuration is saved to file config-backup-HOST-TIMESTAMP.tar.gz
+  - /overlay/upper/ contents is copied to directory overlay-HOST
+
+Tip: You can put the "config-backup-HOST" directory under git source control
+and keep a history of configuration changes that way.
+"""
     parser = subparsers.add_parser(name,
-        formatter_class=argparse.RawTextHelpFormatter, help=help, description=help)
+        formatter_class=argparse.RawTextHelpFormatter, help=help, description=desc)
     parser.add_argument('-l', dest='list', action="store_true",
-        help=f"List backup files (/sbin/sysupgrade -l)")
+        help=f"List backup files (run /sbin/sysupgrade -l)")
     parser.add_argument('-f', metavar='FILE', dest='filename', type=str,
-        help=f"Output file. Default is {cmd_backup_filename('HOST', withtime=False)}")
+        help=f"Output file. Default is {cmd_backup_filename('HOST-TIMESTAMP', withtime=False)}")
     parser.add_argument('-T', dest='withtime', action="store_false", default=True,
         help=f"Do not append timestamp to output filename")
     parser.set_defaults(func=func)
+
 
 #### iface config #############################################################
 

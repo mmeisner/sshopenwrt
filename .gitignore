@@ -14,4 +14,8 @@ __pycache__
 openwrt-imagebuilder-*
 openwrt-*.img
 openwrt-*.img.gz
+
+# config backup files and dirs
 config-backup*
+overlay-*
+overlay.tar.gz
