@@ -1,0 +1,589 @@
+OpenWRT WAN/LAN Throughput Testing on TP-Link WDR3600-v1
+===============================================================================
+
+Summary of OpenWRT WAN/LAN and LAN/WAN wired throughput on a
+TP-Link Archer C7 v2 (WDR4300-v2).
+Device was tested with factory default settings. All numbers are
+in Mbps (1e6 bits per second).
+
+                         Pct  WtoL  LtoW  WtoL     LtoW
+Release                                   refresh  refresh
+--------------------------------------------------------------------
+LEDE    17.01.5          100   451   591   423      542
+OpenWRT 18.06.9           75   339   417   224      265
+OpenWRT 19.07.7        <<< failed to build due to: libubus20191227 >>>
+OpenWRT 21.02.0           73   328   289   228      189
+21.02 + SW Flow offload  158   714   931   522      681
+Columns are:
+
+  - Pct:  WAN to LAN throughput percentual ratio to LEDE 17.01
+  - WtoL: WAN to LAN throughput
+  - LtoW: WAN to LAN throughput
+  - WtoL refresh: WAN to LAN throughput (on realtime graph traffic web page with refresh)
+  - LtoW refresh: WAN to LAN throughput (on realtime graph traffic web page with refresh)
+
+I wasn't able to build OpenWRT 19.07.7 because the image-builder failed with
+ERROR: Cannot satisfy the following dependencies for luci: libubus20191227
+
+Computing realtime traffic graph throughput impact (from WtoL / WtoL refresh),
+shows that the OpenWRT realtime traffic graph heavily impacts the performance:
+dropping to approx. 70% of max in all releases except LEDE 17.01
+which only drops to 94% of max.
+
+
+Detailed test runs for each release are below here.
+
+
+LEDE 17.01 (Auto refresh disabled in browser)
+==========================================================================
+$ ./sshow -c 192.168.1.1 thruput  -n10 -t5 -j
+Using:
+  router_lan=192.168.1.1
+  router_wan=192.168.55.1 network=192.168.55.0/24 test_host=192.168.55.55
+Setting up route on localhost
+localhost $ ip route show exact 192.168.55.0/24
+IP route to 192.168.55.55 via router/192.168.1.1 already exists on LOCALHOST, OK
+    192.168.55.0/24 via 192.168.1.1 dev enp31s0
+Setting up router WAN
+uci get network.wan
+interface
+network.wan already configured on router, OK
+uci get network.wan.ifname
+ip -4 -o addr show dev eth0
+router already has WAN iface configured with 192.168.55.1, OK
+  2: eth0    inet 192.168.55.1/24 brd 192.168.55.255 scope global eth0\       valid_lft forever preferred_lft forever
+Pinging router WAN: 192.168.55.1
+ping -n -q -c1 -w1 192.168.55.1
+cat /etc/os-release
+LEDE_RELEASE="LEDE Reboot 17.01.5 r3919-38e704be71"
+Setting up iperf3 test server
+Pinging test host (iperf3 server): 192.168.55.55
+ping -n -q -c1 -w1 192.168.55.55
+test host responds to ping on 192.168.55.55, OK
+Running iperf3 to 192.168.55.55: 10 iteration(s) of 5s
+localhost $ iperf3 -t5 --json -c 192.168.55.55 -R -t1
+Loop 1 of 10
+localhost $ iperf3 -t5 --json -c 192.168.55.55 -R
+localhost $ iperf3 -t5 --json -c 192.168.55.55
+  WAN to LAN: 438Mbps (approx 45.2% of max, 82 retransmits)
+  LAN to WAN: 593Mbps (approx 61.2% of max, 226 retransmits)
+Loop 2 of 10
+localhost $ iperf3 -t5 --json -c 192.168.55.55 -R
+localhost $ iperf3 -t5 --json -c 192.168.55.55
+  WAN to LAN: 455Mbps (approx 47.0% of max, 119 retransmits)
+  LAN to WAN: 591Mbps (approx 61.0% of max, 218 retransmits)
+Loop 3 of 10
+localhost $ iperf3 -t5 --json -c 192.168.55.55 -R
+localhost $ iperf3 -t5 --json -c 192.168.55.55
+  WAN to LAN: 456Mbps (approx 47.1% of max, 156 retransmits)
+  LAN to WAN: 597Mbps (approx 61.6% of max, 175 retransmits)
+Loop 4 of 10
+localhost $ iperf3 -t5 --json -c 192.168.55.55 -R
+localhost $ iperf3 -t5 --json -c 192.168.55.55
+  WAN to LAN: 453Mbps (approx 46.7% of max, 118 retransmits)
+  LAN to WAN: 598Mbps (approx 61.7% of max, 223 retransmits)
+Loop 5 of 10
+localhost $ iperf3 -t5 --json -c 192.168.55.55 -R
+localhost $ iperf3 -t5 --json -c 192.168.55.55
+  WAN to LAN: 434Mbps (approx 44.8% of max, 117 retransmits)
+  LAN to WAN: 590Mbps (approx 60.9% of max, 213 retransmits)
+Loop 6 of 10
+localhost $ iperf3 -t5 --json -c 192.168.55.55 -R
+localhost $ iperf3 -t5 --json -c 192.168.55.55
+  WAN to LAN: 457Mbps (approx 47.2% of max, 118 retransmits)
+  LAN to WAN: 601Mbps (approx 62.0% of max, 220 retransmits)
+Loop 7 of 10
+localhost $ iperf3 -t5 --json -c 192.168.55.55 -R
+localhost $ iperf3 -t5 --json -c 192.168.55.55
+  WAN to LAN: 454Mbps (approx 46.9% of max, 157 retransmits)
+  LAN to WAN: 597Mbps (approx 61.6% of max, 220 retransmits)
+Loop 8 of 10
+localhost $ iperf3 -t5 --json -c 192.168.55.55 -R
+localhost $ iperf3 -t5 --json -c 192.168.55.55
+  WAN to LAN: 455Mbps (approx 47.0% of max, 118 retransmits)
+  LAN to WAN: 564Mbps (approx 58.2% of max, 221 retransmits)
+Loop 9 of 10
+localhost $ iperf3 -t5 --json -c 192.168.55.55 -R
+localhost $ iperf3 -t5 --json -c 192.168.55.55
+  WAN to LAN: 456Mbps (approx 47.1% of max, 103 retransmits)
+  LAN to WAN: 582Mbps (approx 60.1% of max, 221 retransmits)
+Loop 10 of 10
+localhost $ iperf3 -t5 --json -c 192.168.55.55 -R
+localhost $ iperf3 -t5 --json -c 192.168.55.55
+  WAN to LAN: 454Mbps (approx 46.9% of max, 109 retransmits)
+  LAN to WAN: 591Mbps (approx 61.0% of max, 219 retransmits)
+------------------------------------------------------------
+WAN to LAN stats of 10 runs of 5s: mean=451 min=434 max=457 stddev=8
+LAN to WAN stats of 10 runs of 5s: mean=590 min=564 max=601 stddev=11
+
+
+LEDE 17.01 (with Auto refresh on realtime traffic graph page)
+==========================================================================
+$ ./ssho -c 1 thruput  -i enp0s25 -n10 -t5 -j
+...
+Pinging router WAN: 192.168.55.1
+ping -n -q -c1 -w1 192.168.55.1
+cat /etc/os-release
+LEDE_RELEASE="LEDE Reboot 17.01.5 r3919-38e704be71"
+Setting up iperf3 test server
+Pinging test host (iperf3 server): 192.168.55.55
+ping -n -q -c1 -w1 192.168.55.55
+test host responds to ping on 192.168.55.55, OK
+Running iperf3 to 192.168.55.55: 10 iteration(s) of 5s
+localhost $ iperf3 -t5 --json -c 192.168.55.55 -R -t1
+Loop 1 of 10
+localhost $ iperf3 -t5 --json -c 192.168.55.55 -R
+localhost $ iperf3 -t5 --json -c 192.168.55.55
+  WAN to LAN: 412Mbps (approx 42.5% of max, 114 retransmits)
+  LAN to WAN: 545Mbps (approx 56.2% of max, 227 retransmits)
+Loop 2 of 10
+localhost $ iperf3 -t5 --json -c 192.168.55.55 -R
+localhost $ iperf3 -t5 --json -c 192.168.55.55
+  WAN to LAN: 426Mbps (approx 44.0% of max, 118 retransmits)
+  LAN to WAN: 541Mbps (approx 55.8% of max, 243 retransmits)
+Loop 3 of 10
+localhost $ iperf3 -t5 --json -c 192.168.55.55 -R
+localhost $ iperf3 -t5 --json -c 192.168.55.55
+  WAN to LAN: 421Mbps (approx 43.4% of max, 126 retransmits)
+  LAN to WAN: 555Mbps (approx 57.3% of max, 221 retransmits)
+Loop 4 of 10
+localhost $ iperf3 -t5 --json -c 192.168.55.55 -R
+localhost $ iperf3 -t5 --json -c 192.168.55.55
+  WAN to LAN: 420Mbps (approx 43.3% of max, 122 retransmits)
+  LAN to WAN: 524Mbps (approx 54.1% of max, 225 retransmits)
+Loop 5 of 10
+localhost $ iperf3 -t5 --json -c 192.168.55.55 -R
+localhost $ iperf3 -t5 --json -c 192.168.55.55
+  WAN to LAN: 436Mbps (approx 45.0% of max, 114 retransmits)
+  LAN to WAN: 538Mbps (approx 55.5% of max, 233 retransmits)
+Loop 6 of 10
+localhost $ iperf3 -t5 --json -c 192.168.55.55 -R
+localhost $ iperf3 -t5 --json -c 192.168.55.55
+  WAN to LAN: 421Mbps (approx 43.4% of max, 125 retransmits)
+  LAN to WAN: 554Mbps (approx 57.2% of max, 214 retransmits)
+Loop 7 of 10
+localhost $ iperf3 -t5 --json -c 192.168.55.55 -R
+localhost $ iperf3 -t5 --json -c 192.168.55.55
+  WAN to LAN: 421Mbps (approx 43.4% of max, 141 retransmits)
+  LAN to WAN: 522Mbps (approx 53.9% of max, 217 retransmits)
+Loop 8 of 10
+localhost $ iperf3 -t5 --json -c 192.168.55.55 -R
+localhost $ iperf3 -t5 --json -c 192.168.55.55
+  WAN to LAN: 421Mbps (approx 43.4% of max, 88 retransmits)
+  LAN to WAN: 558Mbps (approx 57.6% of max, 212 retransmits)
+Loop 9 of 10
+localhost $ iperf3 -t5 --json -c 192.168.55.55 -R
+localhost $ iperf3 -t5 --json -c 192.168.55.55
+  WAN to LAN: 421Mbps (approx 43.4% of max, 133 retransmits)
+  LAN to WAN: 552Mbps (approx 57.0% of max, 217 retransmits)
+Loop 10 of 10
+localhost $ iperf3 -t5 --json -c 192.168.55.55 -R
+localhost $ iperf3 -t5 --json -c 192.168.55.55
+  WAN to LAN: 433Mbps (approx 44.7% of max, 103 retransmits)
+  LAN to WAN: 534Mbps (approx 55.1% of max, 219 retransmits)
+------------------------------------------------------------
+WAN to LAN stats of 10 runs of 5s: mean=423 min=412 max=436 stddev=7
+LAN to WAN stats of 10 runs of 5s: mean=542 min=522 max=558 stddev=13
+
+
+OpenWRT 18.06.9 (Auto refresh disabled in browser)
+==========================================================================
+$ ./ssho -c 1 thruput  -i enp0s25 -n10 -t5 -j
+Pinging router WAN: 192.168.55.1
+ping -n -q -c1 -w1 192.168.55.1
+cat /etc/os-release
+LEDE_RELEASE="OpenWrt 18.06.9 r8077-7cbbab7246"
+Setting up iperf3 test server
+Pinging test host (iperf3 server): 192.168.55.55
+ping -n -q -c1 -w1 192.168.55.55
+test host responds to ping on 192.168.55.55, OK
+Running iperf3 to 192.168.55.55: 10 iteration(s) of 5s
+localhost $ iperf3 -t5 --json -c 192.168.55.55 -R -t1
+Loop 1 of 10
+localhost $ iperf3 -t5 --json -c 192.168.55.55 -R
+localhost $ iperf3 -t5 --json -c 192.168.55.55
+  WAN to LAN: 335Mbps (approx 34.6% of max, 61 retransmits)
+  LAN to WAN: 434Mbps (approx 44.8% of max, 45 retransmits)
+Loop 2 of 10
+localhost $ iperf3 -t5 --json -c 192.168.55.55 -R
+localhost $ iperf3 -t5 --json -c 192.168.55.55
+  WAN to LAN: 340Mbps (approx 35.1% of max, 44 retransmits)
+  LAN to WAN: 407Mbps (approx 42.0% of max, 75 retransmits)
+Loop 3 of 10
+localhost $ iperf3 -t5 --json -c 192.168.55.55 -R
+localhost $ iperf3 -t5 --json -c 192.168.55.55
+  WAN to LAN: 338Mbps (approx 34.9% of max, 56 retransmits)
+  LAN to WAN: 407Mbps (approx 42.0% of max, 89 retransmits)
+Loop 4 of 10
+localhost $ iperf3 -t5 --json -c 192.168.55.55 -R
+localhost $ iperf3 -t5 --json -c 192.168.55.55
+  WAN to LAN: 340Mbps (approx 35.1% of max, 53 retransmits)
+  LAN to WAN: 435Mbps (approx 44.9% of max, 124 retransmits)
+Loop 5 of 10
+localhost $ iperf3 -t5 --json -c 192.168.55.55 -R
+localhost $ iperf3 -t5 --json -c 192.168.55.55
+  WAN to LAN: 342Mbps (approx 35.3% of max, 48 retransmits)
+  LAN to WAN: 405Mbps (approx 41.8% of max, 127 retransmits)
+Loop 6 of 10
+localhost $ iperf3 -t5 --json -c 192.168.55.55 -R
+localhost $ iperf3 -t5 --json -c 192.168.55.55
+  WAN to LAN: 334Mbps (approx 34.5% of max, 36 retransmits)
+  LAN to WAN: 416Mbps (approx 42.9% of max, 87 retransmits)
+Loop 7 of 10
+localhost $ iperf3 -t5 --json -c 192.168.55.55 -R
+localhost $ iperf3 -t5 --json -c 192.168.55.55
+  WAN to LAN: 342Mbps (approx 35.3% of max, 60 retransmits)
+  LAN to WAN: 434Mbps (approx 44.8% of max, 55 retransmits)
+Loop 8 of 10
+localhost $ iperf3 -t5 --json -c 192.168.55.55 -R
+localhost $ iperf3 -t5 --json -c 192.168.55.55
+  WAN to LAN: 337Mbps (approx 34.8% of max, 33 retransmits)
+  LAN to WAN: 419Mbps (approx 43.2% of max, 61 retransmits)
+Loop 9 of 10
+localhost $ iperf3 -t5 --json -c 192.168.55.55 -R
+localhost $ iperf3 -t5 --json -c 192.168.55.55
+  WAN to LAN: 341Mbps (approx 35.2% of max, 51 retransmits)
+  LAN to WAN: 425Mbps (approx 43.9% of max, 21 retransmits)
+Loop 10 of 10
+localhost $ iperf3 -t5 --json -c 192.168.55.55 -R
+localhost $ iperf3 -t5 --json -c 192.168.55.55
+  WAN to LAN: 340Mbps (approx 35.1% of max, 52 retransmits)
+  LAN to WAN: 390Mbps (approx 40.2% of max, 50 retransmits)
+------------------------------------------------------------
+WAN to LAN stats of 10 runs of 5s: mean=339 min=334 max=342 stddev=3
+LAN to WAN stats of 10 runs of 5s: mean=417 min=390 max=435 stddev=15
+
+
+OpenWRT 18.06.9 (with Auto refresh on realtime traffic graph page)
+==========================================================================
+Pinging router WAN: 192.168.55.1
+ping -n -q -c1 -w1 192.168.55.1
+cat /etc/os-release
+LEDE_RELEASE="OpenWrt 18.06.9 r8077-7cbbab7246"
+Setting up iperf3 test server
+Pinging test host (iperf3 server): 192.168.55.55
+ping -n -q -c1 -w1 192.168.55.55
+test host responds to ping on 192.168.55.55, OK
+Running iperf3 to 192.168.55.55: 10 iteration(s) of 5s
+localhost $ iperf3 -t5 --json -c 192.168.55.55 -R -t1
+Loop 1 of 10
+localhost $ iperf3 -t5 --json -c 192.168.55.55 -R
+localhost $ iperf3 -t5 --json -c 192.168.55.55
+  WAN to LAN: 208Mbps (approx 21.5% of max, 67 retransmits)
+  LAN to WAN: 278Mbps (approx 28.7% of max, 85 retransmits)
+Loop 2 of 10
+localhost $ iperf3 -t5 --json -c 192.168.55.55 -R
+localhost $ iperf3 -t5 --json -c 192.168.55.55
+  WAN to LAN: 240Mbps (approx 24.8% of max, 79 retransmits)
+  LAN to WAN: 262Mbps (approx 27.0% of max, 61 retransmits)
+Loop 3 of 10
+localhost $ iperf3 -t5 --json -c 192.168.55.55 -R
+localhost $ iperf3 -t5 --json -c 192.168.55.55
+  WAN to LAN: 225Mbps (approx 23.2% of max, 57 retransmits)
+  LAN to WAN: 270Mbps (approx 27.9% of max, 47 retransmits)
+Loop 4 of 10
+localhost $ iperf3 -t5 --json -c 192.168.55.55 -R
+localhost $ iperf3 -t5 --json -c 192.168.55.55
+  WAN to LAN: 227Mbps (approx 23.4% of max, 35 retransmits)
+  LAN to WAN: 281Mbps (approx 29.0% of max, 126 retransmits)
+Loop 5 of 10
+localhost $ iperf3 -t5 --json -c 192.168.55.55 -R
+localhost $ iperf3 -t5 --json -c 192.168.55.55
+  WAN to LAN: 231Mbps (approx 23.8% of max, 90 retransmits)
+  LAN to WAN: 258Mbps (approx 26.6% of max, 66 retransmits)
+Loop 6 of 10
+localhost $ iperf3 -t5 --json -c 192.168.55.55 -R
+localhost $ iperf3 -t5 --json -c 192.168.55.55
+  WAN to LAN: 208Mbps (approx 21.5% of max, 73 retransmits)
+  LAN to WAN: 286Mbps (approx 29.5% of max, 63 retransmits)
+Loop 7 of 10
+localhost $ iperf3 -t5 --json -c 192.168.55.55 -R
+localhost $ iperf3 -t5 --json -c 192.168.55.55
+  WAN to LAN: 219Mbps (approx 22.6% of max, 70 retransmits)
+  LAN to WAN: 243Mbps (approx 25.1% of max, 58 retransmits)
+Loop 8 of 10
+localhost $ iperf3 -t5 --json -c 192.168.55.55 -R
+localhost $ iperf3 -t5 --json -c 192.168.55.55
+  WAN to LAN: 236Mbps (approx 24.4% of max, 81 retransmits)
+  LAN to WAN: 249Mbps (approx 25.7% of max, 70 retransmits)
+Loop 9 of 10
+localhost $ iperf3 -t5 --json -c 192.168.55.55 -R
+localhost $ iperf3 -t5 --json -c 192.168.55.55
+  WAN to LAN: 208Mbps (approx 21.5% of max, 47 retransmits)
+  LAN to WAN: 282Mbps (approx 29.1% of max, 65 retransmits)
+Loop 10 of 10
+localhost $ iperf3 -t5 --json -c 192.168.55.55 -R
+localhost $ iperf3 -t5 --json -c 192.168.55.55
+  WAN to LAN: 242Mbps (approx 25.0% of max, 54 retransmits)
+  LAN to WAN: 242Mbps (approx 25.0% of max, 63 retransmits)
+------------------------------------------------------------
+WAN to LAN stats of 10 runs of 5s: mean=224 min=208 max=242 stddev=13
+LAN to WAN stats of 10 runs of 5s: mean=265 min=242 max=286 stddev=17
+
+
+OpenWRT 21.02.0 (Auto refresh disabled in browser)
+==========================================================================
+Pinging router WAN: 192.168.55.1
+ping -n -q -c1 -w1 192.168.55.1
+cat /etc/os-release
+OPENWRT_RELEASE="OpenWrt 21.02.0 r16279-5cc0535800"
+Setting up iperf3 test server
+Pinging test host (iperf3 server): 192.168.55.55
+ping -n -q -c1 -w1 192.168.55.55
+test host responds to ping on 192.168.55.55, OK
+Running iperf3 to 192.168.55.55: 10 iteration(s) of 5s
+localhost $ iperf3 -t5 --json -c 192.168.55.55 -R -t1
+Loop 1 of 10
+localhost $ iperf3 -t5 --json -c 192.168.55.55 -R
+localhost $ iperf3 -t5 --json -c 192.168.55.55
+  WAN to LAN: 242Mbps (approx 25.0% of max, 43 retransmits)
+  LAN to WAN: 263Mbps (approx 27.1% of max, 91 retransmits)
+Loop 2 of 10
+localhost $ iperf3 -t5 --json -c 192.168.55.55 -R
+localhost $ iperf3 -t5 --json -c 192.168.55.55
+  WAN to LAN: 309Mbps (approx 31.9% of max, 56 retransmits)
+  LAN to WAN: 260Mbps (approx 26.8% of max, 65 retransmits)
+Loop 3 of 10
+localhost $ iperf3 -t5 --json -c 192.168.55.55 -R
+localhost $ iperf3 -t5 --json -c 192.168.55.55
+  WAN to LAN: 308Mbps (approx 31.8% of max, 60 retransmits)
+  LAN to WAN: 258Mbps (approx 26.6% of max, 75 retransmits)
+Loop 4 of 10
+localhost $ iperf3 -t5 --json -c 192.168.55.55 -R
+localhost $ iperf3 -t5 --json -c 192.168.55.55
+  WAN to LAN: 308Mbps (approx 31.8% of max, 40 retransmits)
+  LAN to WAN: 261Mbps (approx 26.9% of max, 96 retransmits)
+Loop 5 of 10
+localhost $ iperf3 -t5 --json -c 192.168.55.55 -R
+localhost $ iperf3 -t5 --json -c 192.168.55.55
+  WAN to LAN: 305Mbps (approx 31.5% of max, 64 retransmits)
+  LAN to WAN: 259Mbps (approx 26.7% of max, 78 retransmits)
+Loop 6 of 10
+localhost $ iperf3 -t5 --json -c 192.168.55.55 -R
+localhost $ iperf3 -t5 --json -c 192.168.55.55
+  WAN to LAN: 309Mbps (approx 31.9% of max, 36 retransmits)
+  LAN to WAN: 260Mbps (approx 26.8% of max, 40 retransmits)
+Loop 7 of 10
+localhost $ iperf3 -t5 --json -c 192.168.55.55 -R
+localhost $ iperf3 -t5 --json -c 192.168.55.55
+  WAN to LAN: 308Mbps (approx 31.8% of max, 13 retransmits)
+  LAN to WAN: 261Mbps (approx 26.9% of max, 66 retransmits)
+Loop 8 of 10
+localhost $ iperf3 -t5 --json -c 192.168.55.55 -R
+localhost $ iperf3 -t5 --json -c 192.168.55.55
+  WAN to LAN: 313Mbps (approx 32.3% of max, 41 retransmits)
+  LAN to WAN: 262Mbps (approx 27.0% of max, 76 retransmits)
+Loop 9 of 10
+localhost $ iperf3 -t5 --json -c 192.168.55.55 -R
+localhost $ iperf3 -t5 --json -c 192.168.55.55
+  WAN to LAN: 313Mbps (approx 32.3% of max, 58 retransmits)
+  LAN to WAN: 263Mbps (approx 27.1% of max, 85 retransmits)
+Loop 10 of 10
+localhost $ iperf3 -t5 --json -c 192.168.55.55 -R
+localhost $ iperf3 -t5 --json -c 192.168.55.55
+  WAN to LAN: 305Mbps (approx 31.5% of max, 43 retransmits)
+  LAN to WAN: 259Mbps (approx 26.7% of max, 81 retransmits)
+------------------------------------------------------------
+WAN to LAN stats of 10 runs of 5s: mean=302 min=242 max=313 stddev=21
+LAN to WAN stats of 10 runs of 5s: mean=261 min=258 max=263 stddev=2
+
+
+OpenWRT 21.02.0 (with Auto refresh on realtime traffic graph page)
+==========================================================================
+Pinging router WAN: 192.168.55.1
+ping -n -q -c1 -w1 192.168.55.1
+cat /etc/os-release
+OPENWRT_RELEASE="OpenWrt 21.02.0 r16279-5cc0535800"
+Setting up iperf3 test server
+Pinging test host (iperf3 server): 192.168.55.55
+ping -n -q -c1 -w1 192.168.55.55
+test host responds to ping on 192.168.55.55, OK
+Running iperf3 to 192.168.55.55: 10 iteration(s) of 5s
+localhost $ iperf3 -t5 --json -c 192.168.55.55 -R -t1
+Loop 1 of 10
+localhost $ iperf3 -t5 --json -c 192.168.55.55 -R
+localhost $ iperf3 -t5 --json -c 192.168.55.55
+  WAN to LAN: 222Mbps (approx 22.9% of max, 30 retransmits)
+  LAN to WAN: 188Mbps (approx 19.4% of max, 100 retransmits)
+Loop 2 of 10
+localhost $ iperf3 -t5 --json -c 192.168.55.55 -R
+localhost $ iperf3 -t5 --json -c 192.168.55.55
+  WAN to LAN: 250Mbps (approx 25.8% of max, 33 retransmits)
+  LAN to WAN: 189Mbps (approx 19.5% of max, 61 retransmits)
+Loop 3 of 10
+localhost $ iperf3 -t5 --json -c 192.168.55.55 -R
+localhost $ iperf3 -t5 --json -c 192.168.55.55
+  WAN to LAN: 218Mbps (approx 22.5% of max, 47 retransmits)
+  LAN to WAN: 209Mbps (approx 21.6% of max, 89 retransmits)
+Loop 4 of 10
+localhost $ iperf3 -t5 --json -c 192.168.55.55 -R
+localhost $ iperf3 -t5 --json -c 192.168.55.55
+  WAN to LAN: 224Mbps (approx 23.1% of max, 24 retransmits)
+  LAN to WAN: 175Mbps (approx 18.1% of max, 92 retransmits)
+Loop 5 of 10
+localhost $ iperf3 -t5 --json -c 192.168.55.55 -R
+localhost $ iperf3 -t5 --json -c 192.168.55.55
+  WAN to LAN: 243Mbps (approx 25.1% of max, 81 retransmits)
+  LAN to WAN: 191Mbps (approx 19.7% of max, 80 retransmits)
+Loop 6 of 10
+localhost $ iperf3 -t5 --json -c 192.168.55.55 -R
+localhost $ iperf3 -t5 --json -c 192.168.55.55
+  WAN to LAN: 211Mbps (approx 21.8% of max, 47 retransmits)
+  LAN to WAN: 201Mbps (approx 20.7% of max, 98 retransmits)
+Loop 7 of 10
+localhost $ iperf3 -t5 --json -c 192.168.55.55 -R
+localhost $ iperf3 -t5 --json -c 192.168.55.55
+  WAN to LAN: 231Mbps (approx 23.8% of max, 42 retransmits)
+  LAN to WAN: 174Mbps (approx 18.0% of max, 94 retransmits)
+Loop 8 of 10
+localhost $ iperf3 -t5 --json -c 192.168.55.55 -R
+localhost $ iperf3 -t5 --json -c 192.168.55.55
+  WAN to LAN: 237Mbps (approx 24.5% of max, 36 retransmits)
+  LAN to WAN: 196Mbps (approx 20.2% of max, 57 retransmits)
+Loop 9 of 10
+localhost $ iperf3 -t5 --json -c 192.168.55.55 -R
+localhost $ iperf3 -t5 --json -c 192.168.55.55
+  WAN to LAN: 211Mbps (approx 21.8% of max, 2 retransmits)
+  LAN to WAN: 195Mbps (approx 20.1% of max, 66 retransmits)
+Loop 10 of 10
+localhost $ iperf3 -t5 --json -c 192.168.55.55 -R
+localhost $ iperf3 -t5 --json -c 192.168.55.55
+  WAN to LAN: 238Mbps (approx 24.6% of max, 37 retransmits)
+  LAN to WAN: 174Mbps (approx 18.0% of max, 57 retransmits)
+------------------------------------------------------------
+WAN to LAN stats of 10 runs of 5s: mean=228 min=211 max=250 stddev=13
+LAN to WAN stats of 10 runs of 5s: mean=189 min=174 max=209 stddev=12
+
+OpenWRT 21.02.0 with SW Flow Offload (Auto refresh disabled in browser)
+==========================================================================
+$ ./ssho -c 192.168.1.1 thruput  -n10 -t5 -j
+Pinging router WAN: 192.168.55.1
+ping -n -q -c1 -w1 192.168.55.1
+cat /etc/os-release
+OPENWRT_RELEASE="OpenWrt 21.02.0 r16279-5cc0535800"
+Setting up iperf3 test server
+Pinging test host (iperf3 server): 192.168.55.55
+ping -n -q -c1 -w1 192.168.55.55
+test host responds to ping on 192.168.55.55, OK
+Running iperf3 to 192.168.55.55: 10 iteration(s) of 5s
+localhost $ iperf3 -t5 --json -c 192.168.55.55 -R -t1
+Loop 1 of 10
+localhost $ iperf3 -t5 --json -c 192.168.55.55 -R
+localhost $ iperf3 -t5 --json -c 192.168.55.55
+  WAN to LAN: 733Mbps (approx 75.6% of max, 73 retransmits)
+  LAN to WAN: 931Mbps (approx 96.1% of max, 29 retransmits)
+Loop 2 of 10
+localhost $ iperf3 -t5 --json -c 192.168.55.55 -R
+localhost $ iperf3 -t5 --json -c 192.168.55.55
+  WAN to LAN: 726Mbps (approx 74.9% of max, 86 retransmits)
+  LAN to WAN: 933Mbps (approx 96.3% of max, 28 retransmits)
+Loop 3 of 10
+localhost $ iperf3 -t5 --json -c 192.168.55.55 -R
+localhost $ iperf3 -t5 --json -c 192.168.55.55
+  WAN to LAN: 730Mbps (approx 75.3% of max, 70 retransmits)
+  LAN to WAN: 912Mbps (approx 94.1% of max, 27 retransmits)
+Loop 4 of 10
+localhost $ iperf3 -t5 --json -c 192.168.55.55 -R
+localhost $ iperf3 -t5 --json -c 192.168.55.55
+  WAN to LAN: 723Mbps (approx 74.6% of max, 78 retransmits)
+  LAN to WAN: 933Mbps (approx 96.3% of max, 25 retransmits)
+Loop 5 of 10
+localhost $ iperf3 -t5 --json -c 192.168.55.55 -R
+localhost $ iperf3 -t5 --json -c 192.168.55.55
+  WAN to LAN: 719Mbps (approx 74.2% of max, 56 retransmits)
+  LAN to WAN: 933Mbps (approx 96.3% of max, 26 retransmits)
+Loop 6 of 10
+localhost $ iperf3 -t5 --json -c 192.168.55.55 -R
+localhost $ iperf3 -t5 --json -c 192.168.55.55
+  WAN to LAN: 716Mbps (approx 73.9% of max, 71 retransmits)
+  LAN to WAN: 933Mbps (approx 96.3% of max, 25 retransmits)
+Loop 7 of 10
+localhost $ iperf3 -t5 --json -c 192.168.55.55 -R
+localhost $ iperf3 -t5 --json -c 192.168.55.55
+  WAN to LAN: 715Mbps (approx 73.8% of max, 51 retransmits)
+  LAN to WAN: 933Mbps (approx 96.3% of max, 25 retransmits)
+Loop 8 of 10
+localhost $ iperf3 -t5 --json -c 192.168.55.55 -R
+localhost $ iperf3 -t5 --json -c 192.168.55.55
+  WAN to LAN: 715Mbps (approx 73.8% of max, 109 retransmits)
+  LAN to WAN: 934Mbps (approx 96.4% of max, 25 retransmits)
+Loop 9 of 10
+localhost $ iperf3 -t5 --json -c 192.168.55.55 -R
+localhost $ iperf3 -t5 --json -c 192.168.55.55
+  WAN to LAN: 715Mbps (approx 73.8% of max, 66 retransmits)
+  LAN to WAN: 933Mbps (approx 96.3% of max, 23 retransmits)
+Loop 10 of 10
+localhost $ iperf3 -t5 --json -c 192.168.55.55 -R
+localhost $ iperf3 -t5 --json -c 192.168.55.55
+  WAN to LAN: 714Mbps (approx 73.7% of max, 59 retransmits)
+  LAN to WAN: 932Mbps (approx 96.2% of max, 21 retransmits)
+------------------------------------------------------------
+WAN to LAN stats of 10 runs of 5s: mean=721 min=714 max=733 stddev=7
+LAN to WAN stats of 10 runs of 5s: mean=931 min=912 max=934 stddev=7
+
+
+OpenWRT 21.02.0 with SW Flow Offload (with Auto refresh on realtime traffic graph page)
+==========================================================================
+Pinging router WAN: 192.168.55.1
+ping -n -q -c1 -w1 192.168.55.1
+cat /etc/os-release
+OPENWRT_RELEASE="OpenWrt 21.02.0 r16279-5cc0535800"
+Setting up iperf3 test server
+Pinging test host (iperf3 server): 192.168.55.55
+ping -n -q -c1 -w1 192.168.55.55
+test host responds to ping on 192.168.55.55, OK
+Running iperf3 to 192.168.55.55: 10 iteration(s) of 5s
+localhost $ iperf3 -t5 --json -c 192.168.55.55 -R -t1
+Loop 1 of 10
+localhost $ iperf3 -t5 --json -c 192.168.55.55 -R
+localhost $ iperf3 -t5 --json -c 192.168.55.55
+  WAN to LAN: 559Mbps (approx 57.7% of max, 92 retransmits)
+  LAN to WAN: 675Mbps (approx 69.7% of max, 25 retransmits)
+Loop 2 of 10
+localhost $ iperf3 -t5 --json -c 192.168.55.55 -R
+localhost $ iperf3 -t5 --json -c 192.168.55.55
+  WAN to LAN: 485Mbps (approx 50.1% of max, 69 retransmits)
+  LAN to WAN: 722Mbps (approx 74.5% of max, 19 retransmits)
+Loop 3 of 10
+localhost $ iperf3 -t5 --json -c 192.168.55.55 -R
+localhost $ iperf3 -t5 --json -c 192.168.55.55
+  WAN to LAN: 526Mbps (approx 54.3% of max, 39 retransmits)
+  LAN to WAN: 629Mbps (approx 64.9% of max, 20 retransmits)
+Loop 4 of 10
+localhost $ iperf3 -t5 --json -c 192.168.55.55 -R
+localhost $ iperf3 -t5 --json -c 192.168.55.55
+  WAN to LAN: 535Mbps (approx 55.2% of max, 102 retransmits)
+  LAN to WAN: 709Mbps (approx 73.2% of max, 111 retransmits)
+Loop 5 of 10
+localhost $ iperf3 -t5 --json -c 192.168.55.55 -R
+localhost $ iperf3 -t5 --json -c 192.168.55.55
+  WAN to LAN: 483Mbps (approx 49.8% of max, 37 retransmits)
+  LAN to WAN: 687Mbps (approx 70.9% of max, 14 retransmits)
+Loop 6 of 10
+localhost $ iperf3 -t5 --json -c 192.168.55.55 -R
+localhost $ iperf3 -t5 --json -c 192.168.55.55
+  WAN to LAN: 552Mbps (approx 57.0% of max, 79 retransmits)
+  LAN to WAN: 629Mbps (approx 64.9% of max, 67 retransmits)
+Loop 7 of 10
+localhost $ iperf3 -t5 --json -c 192.168.55.55 -R
+localhost $ iperf3 -t5 --json -c 192.168.55.55
+  WAN to LAN: 523Mbps (approx 54.0% of max, 85 retransmits)
+  LAN to WAN: 726Mbps (approx 74.9% of max, 51 retransmits)
+Loop 8 of 10
+localhost $ iperf3 -t5 --json -c 192.168.55.55 -R
+localhost $ iperf3 -t5 --json -c 192.168.55.55
+  WAN to LAN: 484Mbps (approx 49.9% of max, 100 retransmits)
+  LAN to WAN: 675Mbps (approx 69.7% of max, 14 retransmits)
+Loop 9 of 10
+localhost $ iperf3 -t5 --json -c 192.168.55.55 -R
+localhost $ iperf3 -t5 --json -c 192.168.55.55
+  WAN to LAN: 562Mbps (approx 58.0% of max, 45 retransmits)
+  LAN to WAN: 625Mbps (approx 64.5% of max, 76 retransmits)
+Loop 10 of 10
+localhost $ iperf3 -t5 --json -c 192.168.55.55 -R
+localhost $ iperf3 -t5 --json -c 192.168.55.55
+  WAN to LAN: 512Mbps (approx 52.8% of max, 89 retransmits)
+  LAN to WAN: 734Mbps (approx 75.7% of max, 40 retransmits)
+------------------------------------------------------------
+WAN to LAN stats of 10 runs of 5s: mean=522 min=483 max=562 stddev=31
+LAN to WAN stats of 10 runs of 5s: mean=681 min=625 max=734 stddev=42
