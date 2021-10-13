@@ -12,7 +12,7 @@ import time
 from sshopenwrt import *
 
 host_aliases = {
-    '1': "192.168.1.1"
+    str(i): f"192.168.1.{str(i)}" for i in range(1,254)
 }
 
 
@@ -179,7 +179,7 @@ def cmd_upgrade_wait(owrt:OpenWRT):
     owrt.ping_wait_offline(timeout=60, min_offline_time=3)
 
     log.info("Waiting for router to finish upgrade and come back online...")
-    owrt.ping_wait(timeout=120)
+    owrt.ping_wait(owrt.host, timeout=120)
     for i in range(30):
         try:
             ver = owrt.get_release()
@@ -278,7 +278,7 @@ def cmd_info(owrt:OpenWRT):
         owrt.execute("uname -a")
         owrt.execute('cat /etc/os-release | grep -E "_BOARD|_ARCH|_RELEASE"')
         owrt.execute("df -h")
-        owrt.execute("ip -4 -color addr")
+        owrt.execute("ip -4 addr")
 
         keys = ("ifname", "proto", "ipaddr", "netmask")
         out = owrt.uci_show("network.lan")
