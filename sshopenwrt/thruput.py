@@ -65,6 +65,7 @@ class ThruputTest(object):
             self.log.error(f"Invalid test_server IP supplied to {self.__class__.__name__}")
             raise
 
+        # test_net is the router's WAN network
         self.test_net = ipa.ip_network(self.server_iface, strict=False)
         self.test_netmask = self.test_net.netmask
         self.server_ip = self.server_iface.ip
@@ -75,6 +76,12 @@ class ThruputTest(object):
   router_lan={self.router_lan_ip}
   router_wan={self.router_wan_ip} network={self.test_net} test_host={self.server_ip}""")
 
+        if self.router_lan_ip in self.test_net:
+            self.log.error("Router's LAN IP is in same network as routers WAN IP and that won't work.")
+            self.log.error("iperf3 server IP must be in *another* network than router's LAN IP.")
+            self.log.error("You can just use the default address by NOT supplying the -s option")
+            self.log.die("")
+
     def setup_localhost(self):
         self.log.header("Setting up route on localhost")
         out = self.localhost_run_command_ok(f"ip route show exact {self.test_net}").strip()
@@ -83,19 +90,24 @@ class ThruputTest(object):
             self.log.info("    " + out)
         else:
             self.log.info(f"Adding IP route to {self.server_ip} via router/{self.router_lan_ip}, on LOCALHOST:")
-            self.log.info("This will ask for your LOCALHOST sudo password...")
+            self.log.note("This will ask for your LOCALHOST sudo password...")
             self.localhost_run_command_ok(f"sudo ip route add {self.test_net} via {self.router_lan_ip}",
                                           accept_stderr="File exists")
 
+    def ping_host(self, name, ipaddr):
+        try:
+            self.openwrt.ping_wait(ipaddr, 1)
+            self.log.info(f"{name} responds to ping on {ipaddr}, OK")
+            return True
+        except TimeoutError:
+            self.log.error(f"Failed to ping {name} on {ipaddr}")
+            return False
+
     def setup_iperf_server_host(self):
         self.log.header("Setting up iperf3 test server")
+
         self.log.info(f"Pinging test host (iperf3 server): {self.server_ip}")
-        try:
-            self.openwrt.ping_wait(self.server_ip, 1)
-            self.log.info(f"test host {self.server_ip} responds to ping, OK")
-            return
-        except TimeoutError:
-            self.log.error(f"Failed to ping test host {self.server_ip}")
+        if not self.ping_host("test host", self.server_ip):
             self.log.note(f"""\
 Please configure test host with following commands:")
   # tell network manager to stop managing this ethernet interface
@@ -109,6 +121,8 @@ Please configure test host with following commands:")
 where IFNAME is the ethernet interface name, e.g. enp31s0, eth0 or whatever""")
             sys.exit(1)
 
+        self.start_iperf_server_host_via_ssh()
+
     def setup_router(self):
         self.log.header("Setting up router WAN")
         # check is WAN interface is defined, otherwise create it
@@ -116,14 +130,18 @@ where IFNAME is the ethernet interface name, e.g. enp31s0, eth0 or whatever""")
         if status != 0 and any(["Entry not found" in x for x in (out, err)]):
             self.log.info("network.wan not found, will create it")
             self.openwrt.uci_add("network", "wan")
+            # TODO: find some way to work around the difference in
+            # device/ifname option name: 21.02 replaced option "ifname" with "device"
             config = {"network.wan": "interface", "network.wan.ifname": self.router_wan_ifname}
+            config = {"network.wan": "interface", "network.wan.device": self.router_wan_ifname}
             self.openwrt.uci_set(config, commit=True)
         else:
             self.log.info("network.wan already configured on router, OK")
 
         # get current WAN IPv4 config:
         # get interface name for the WAN. Then get IP config for that interface.
-        wan_iface = self.openwrt.uci_get("network.wan.ifname")
+        wan_iface = self.openwrt.uci_get("network.wan.device")
+        #wan_iface = self.openwrt.uci_get("network.wan.ifname")
         out = self.openwrt.capture_ok(f"ip -4 -o addr show dev {wan_iface}").strip()
         if f"{self.router_wan_ip}" in out:
             self.log.info(f"router already has WAN iface configured with {self.router_wan_ip}, OK")
@@ -229,6 +247,7 @@ where IFNAME is the ethernet interface name, e.g. enp31s0, eth0 or whatever""")
         status, _, _ = ssh.capture("uname", with_stdout=True)
         if status != 0:
             self.log.die(f"ssh connection to {ssh_host} FAILED")
+
         self.log.good(f"ssh connection to {ssh_host} OK, proceeding with network setup...")
 
         cmd = "which nmcli"
@@ -237,7 +256,7 @@ where IFNAME is the ethernet interface name, e.g. enp31s0, eth0 or whatever""")
             self.log.error(f"nmcli command not found on {ssh_host}")
             self.log.die(f"You have to setup test server host manually")
 
-        cmd = "nmcli conn show id thruput |grep ipv4.addr"
+        cmd = "nmcli conn show id thruput | grep ipv4.addr"
         status, out, err = ssh.capture(cmd, with_stdout=True)
         if status != 0 and "no such connection profile" in out:
 
@@ -258,11 +277,31 @@ where IFNAME is the ethernet interface name, e.g. enp31s0, eth0 or whatever""")
             if status != 0:
                 self.log.die(f"FAILED to bring up nmcli 'thruput' connection")
 
+    def start_iperf_server_host_via_ssh(self):
+        ssh_host = self.test_server_ssh_ip
+        if ssh_host:
+            self.log.header("Starting iperf3 server on test server")
+            self.log.info(f"Pinging test host (iperf3 server): {ssh_host}")
+
+            self.log.info(f"Trying SSH connection to {ssh_host}")
+            # next line will only instantiate the SSHConn, it will not connect
+            ssh = SshConn(ssh_host, log=self.log)
+            self.ping_host("SSH IP of test server", ssh.host)
+        else:
+            self.log.info(f"SSH IP of test host not supplied; you will have to start iperf3 server manually:")
+            self.log.info(f"  iperf3 -s")
+            return
+
         cmd = "pgrep iperf3"
-        status, out, _ = ssh.capture(cmd, with_stdout=True)
+        status, out, _ = ssh.capture(cmd)
         if status == 0:
             self.log.good(f"{ssh_host} already has iperf3 running, OK")
         else:
-            self.log.note(f"Please launch command on {ssh_host}: iperf3 -s")
-            sys.exit(0)
+            cmd = "iperf3 -s </dev/null >/tmp/iperf.log 2>&1 &"
+            status, out, err = ssh.capture(cmd, with_stdout=True)
+            if status == 0:
+                self.log.info("iperf3 server started")
+            else:
+                self.log.note(f"Please manually launch command on {ssh_host}: iperf3 -s")
+                sys.exit(1)
 

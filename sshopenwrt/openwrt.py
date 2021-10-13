@@ -139,7 +139,6 @@ class SshConn(object):
         :param timeout: timeout in seconds
         :return:
         """
-        host = host if host else self.host
         started = time.time()
         deadline = started + timeout
         cmd = f"ping -n -q -c1 -w1 {host}"
